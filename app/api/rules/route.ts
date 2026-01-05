@@ -29,9 +29,12 @@ export async function GET(request: NextRequest) {
 			.eq("product_id", productId)
 			.single();
 
-		console.log("Fetching config for product:", productId);
+		console.log("Fetching config for product:", {
+			companyId,
+			productId,
+		});
 		console.log("Config data:", config);
-		console.log("Config error:", configError);
+		console.log("Config error:", configError?.code, configError?.message);
 
 		// PGRST116 is "not found" - that's okay, we'll use defaults
 		if (configError && configError.code !== "PGRST116") {
@@ -100,12 +103,19 @@ export async function POST(request: NextRequest) {
 		}
 
 		// Check if config exists - scoped to company
-		const { data: existingConfig } = await supabaseAdmin
+		const { data: existingConfig, error: checkError } = await supabaseAdmin
 			.from("product_configs")
 			.select("*")
 			.eq("company_id", companyId)
 			.eq("product_id", productId)
 			.single();
+
+		console.log("Checking for existing config:", {
+			companyId,
+			productId,
+			existingConfig,
+			checkError: checkError?.code,
+		});
 
 		const configData = {
 			company_id: companyId,
@@ -117,34 +127,50 @@ export async function POST(request: NextRequest) {
 			allow_downgrade_to_cancel: advancedRules?.allowDowngradeToCancel ?? true, // Default ON
 		};
 
-		if (!existingConfig || existingConfig.code === "PGRST116") {
+		// PGRST116 = not found, so insert new config
+		if (checkError && checkError.code === "PGRST116") {
+			console.log("No existing config found, inserting new one");
 			// Insert new config
-			const { error: insertError } = await supabaseAdmin
+			const { data: insertedData, error: insertError } = await supabaseAdmin
 				.from("product_configs")
-				.insert(configData);
+				.insert(configData)
+				.select()
+				.single();
 
 			if (insertError) {
 				console.error("Error inserting product config:", insertError);
 				return NextResponse.json(
-					{ error: "Failed to save configuration" },
+					{ error: "Failed to save configuration", details: insertError.message },
 					{ status: 500 },
 				);
 			}
+			console.log("Config inserted successfully:", insertedData);
+		} else if (checkError) {
+			// Some other error occurred
+			console.error("Error checking for existing config:", checkError);
+			return NextResponse.json(
+				{ error: "Failed to check configuration", details: checkError.message },
+				{ status: 500 },
+			);
 		} else {
-			// Update existing config - scoped to company
-			const { error: updateError } = await supabaseAdmin
+			// Config exists, update it
+			console.log("Config exists, updating:", existingConfig);
+			const { data: updatedData, error: updateError } = await supabaseAdmin
 				.from("product_configs")
 				.update(configData)
 				.eq("company_id", companyId)
-				.eq("product_id", productId);
+				.eq("product_id", productId)
+				.select()
+				.single();
 
 			if (updateError) {
 				console.error("Error updating product config:", updateError);
 				return NextResponse.json(
-					{ error: "Failed to save configuration" },
+					{ error: "Failed to save configuration", details: updateError.message },
 					{ status: 500 },
 				);
 			}
+			console.log("Config updated successfully:", updatedData);
 		}
 
 		return NextResponse.json({ success: true });
