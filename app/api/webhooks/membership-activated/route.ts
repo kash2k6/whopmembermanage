@@ -104,7 +104,26 @@ export async function POST(request: NextRequest): Promise<Response> {
 					userId: user.id,
 					productId: product.id,
 					planId: plan.id,
-				}),
+				})
+					.then((result) => {
+						console.log("=== UPGRADE PROCESSING COMPLETE ===");
+						console.log("Result:", JSON.stringify(result, null, 2));
+						if (result.error) {
+							console.error("Upgrade processing error:", result.error);
+						}
+						if (result.canceledMemberships.length > 0) {
+							console.log(`Successfully canceled ${result.canceledMemberships.length} membership(s):`, result.canceledMemberships);
+						} else {
+							console.log("No memberships were canceled");
+						}
+						return result;
+					})
+					.catch((error) => {
+						console.error("=== UPGRADE PROCESSING FAILED ===");
+						console.error("Error:", error);
+						console.error("Stack:", error instanceof Error ? error.stack : "No stack trace");
+						throw error;
+					}),
 			);
 
 			console.log("Upgrade processing queued successfully");
