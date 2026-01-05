@@ -66,7 +66,7 @@ export function ActivityPreview({ activities, loading = false }: ActivityPreview
 								</div>
 								<div className="text-sm text-text-muted">
 									{activity.old_plan_name || "No previous plan"} →{" "}
-									{activity.new_plan_name}
+									{activity.new_plan_name || "New plan"}
 								</div>
 							</div>
 							<div className="text-right">

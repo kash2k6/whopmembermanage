@@ -216,10 +216,8 @@ export async function fetchPlan(
 		
 		const plan = await response.json();
 		
-		// Extract plan title using same logic as fetchPlans
-		const productTitle = plan.product?.title || "";
-		const planName = plan.internal_notes || plan.title || plan.name || `Plan ${plan.id?.slice(-8) || ""}`;
-		let title = productTitle ? `${productTitle} - ${planName}` : planName;
+		// Extract plan name from internal_notes (same logic as fetchPlans)
+		const planName = plan.internal_notes || plan.title || plan.name || null;
 		
 		// Get prices - Whop API returns prices in dollars (e.g., 149.95)
 		let initialPrice = (plan.initial_price ?? plan.initialPrice ?? 0);
@@ -229,11 +227,47 @@ export async function fetchPlan(
 		initialPrice = Math.round(Number(initialPrice) * 100) || 0;
 		renewalPrice = Math.round(Number(renewalPrice) * 100) || 0;
 		
+		// Format price for display
+		const price = renewalPrice || initialPrice;
+		const priceFormatted = price > 0 ? `$${(price / 100).toFixed(2)}/mo` : "Free";
+		
+		// Get product title from nested product object
+		const productTitle = plan.product?.title || "";
+		
+		// Build title using same enhancement logic as plans API route
+		let title: string;
+		if (planName && !planName.includes("$") && !planName.includes("/mo")) {
+			// Title is from internal_notes (e.g., "Scale", "Growth")
+			if (productTitle) {
+				title = `${productTitle} - ${planName} - ${priceFormatted}`;
+			} else {
+				title = `${planName} - ${priceFormatted}`;
+			}
+		} else if (planName && (planName.startsWith("$") || planName.endsWith("/mo"))) {
+			// Title is just a price, enhance with product name
+			if (productTitle) {
+				title = `${productTitle} - ${planName}`;
+			} else {
+				title = planName;
+			}
+		} else if (!planName || planName.startsWith("Plan ")) {
+			// No title or generic, create descriptive one
+			if (productTitle) {
+				title = `${productTitle} - ${priceFormatted}`;
+			} else {
+				title = priceFormatted;
+			}
+		} else {
+			title = planName;
+		}
+		
 		console.log(`Fetched plan ${planId}:`, {
 			title,
 			initialPrice,
 			renewalPrice,
 			type: plan.plan_type || plan.type,
+			planName,
+			productTitle,
 		});
 		
 		return {
