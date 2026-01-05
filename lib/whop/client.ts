@@ -215,13 +215,34 @@ export async function fetchPlan(
 		}
 		
 		const plan = await response.json();
+		
+		// Extract plan title using same logic as fetchPlans
+		const productTitle = plan.product?.title || "";
+		const planName = plan.internal_notes || plan.title || plan.name || `Plan ${plan.id?.slice(-8) || ""}`;
+		let title = productTitle ? `${productTitle} - ${planName}` : planName;
+		
+		// Get prices - Whop API returns prices in dollars (e.g., 149.95)
+		let initialPrice = (plan.initial_price ?? plan.initialPrice ?? 0);
+		let renewalPrice = (plan.renewal_price ?? plan.renewalPrice ?? 0);
+		
+		// Convert to cents (integer)
+		initialPrice = Math.round(Number(initialPrice) * 100) || 0;
+		renewalPrice = Math.round(Number(renewalPrice) * 100) || 0;
+		
+		console.log(`Fetched plan ${planId}:`, {
+			title,
+			initialPrice,
+			renewalPrice,
+			type: plan.plan_type || plan.type,
+		});
+		
 		return {
-			id: plan.id,
-			title: plan.title || "",
-			product_id: plan.product_id || "",
-			initial_price: plan.initial_price || 0,
-			renewal_price: plan.renewal_price || 0,
-			plan_type: (plan.plan_type as "renewal" | "one-time") || "renewal",
+			id: plan.id || planId,
+			title: title,
+			product_id: plan.product?.id || plan.product_id || "",
+			initial_price: initialPrice,
+			renewal_price: renewalPrice,
+			plan_type: (plan.plan_type || plan.type || "renewal") as "renewal" | "one-time",
 		};
 	} catch (error) {
 		console.error("Error fetching plan:", error);

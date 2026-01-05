@@ -250,7 +250,12 @@ export async function processUpgrade(
 				canceledIds.push(membershipIdToCancel);
 				console.log(`✅ Successfully canceled membership ${membershipIdToCancel} (plan: ${oldPlan?.title || membershipToCancel.plan_id})`);
 
-				// Log the activity
+				// Log the activity with plan names
+				const oldPlanName = oldPlan?.title || `Plan ${membershipToCancel.plan_id.slice(-8)}`;
+				const newPlanName = newPlan.title || `Plan ${planId.slice(-8)}`;
+				
+				console.log(`Logging cancellation: ${oldPlanName} → ${newPlanName}`);
+				
 				await logActivity({
 					companyId,
 					userId,
@@ -258,7 +263,7 @@ export async function processUpgrade(
 					oldPlanId: membershipToCancel.plan_id,
 					newPlanId: planId,
 					oldPlanName: oldPlan?.title || null,
-					newPlanName: newPlan.title,
+					newPlanName: newPlanName,
 					status: "canceled",
 				});
 			} else {
