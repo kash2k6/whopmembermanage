@@ -271,7 +271,25 @@ export async function fetchActiveMemberships(
 			const data = await response.json();
 			const items = data.data || data.memberships || (Array.isArray(data) ? data : []);
 			console.log(`Fetched ${items.length} membership(s) from API (page)`);
-			memberships.push(...items);
+			
+			// Map API response to our interface
+			const mappedMemberships: WhopMembership[] = items.map((membership: any) => {
+				// Extract plan_id from nested plan object or direct property
+				const planId = membership.plan?.id || membership.plan_id || "";
+				const productId = membership.product?.id || membership.product_id || "";
+				const userId = membership.user?.id || membership.user_id || "";
+				
+				return {
+					id: membership.id || "",
+					user_id: userId,
+					product_id: productId,
+					plan_id: planId,
+					status: membership.status || "unknown",
+				};
+			});
+			
+			console.log("Mapped memberships:", mappedMemberships.map(m => ({ id: m.id, planId: m.plan_id, status: m.status })));
+			memberships.push(...mappedMemberships);
 			
 			after = data.page_info?.end_cursor || null;
 		} while (after);
