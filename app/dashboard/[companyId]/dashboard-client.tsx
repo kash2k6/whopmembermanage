@@ -37,6 +37,7 @@ interface ActivityLog {
 
 export function DashboardClient({ companyId }: { companyId: string }) {
 	const [products, setProducts] = useState<Product[]>([]);
+	const [configuredProductIds, setConfiguredProductIds] = useState<Set<string>>(new Set());
 	const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
 	const [plans, setPlans] = useState<Plan[]>([]);
 	const [enabled, setEnabled] = useState(true);
@@ -66,7 +67,20 @@ export function DashboardClient({ companyId }: { companyId: string }) {
 	useEffect(() => {
 		fetchProducts();
 		fetchActivities();
+		fetchConfiguredProducts();
 	}, [companyId]);
+
+	// Fetch configured products when config is saved
+	const fetchConfiguredProducts = async () => {
+		try {
+			const response = await fetch(`/api/configs?companyId=${companyId}`);
+			if (!response.ok) throw new Error("Failed to fetch configured products");
+			const data = await response.json();
+			setConfiguredProductIds(new Set(data.configuredProductIds || []));
+		} catch (error) {
+			console.error("Error fetching configured products:", error);
+		}
+	};
 
 	// Fetch plans and rules when product is selected
 	useEffect(() => {
@@ -239,6 +253,9 @@ export function DashboardClient({ companyId }: { companyId: string }) {
 			setSaveSuccess(true);
 			console.log("Configuration saved successfully");
 			
+			// Refresh configured products list
+			fetchConfiguredProducts();
+			
 			// Hide success message after 3 seconds
 			setTimeout(() => setSaveSuccess(false), 3000);
 		} catch (error) {
@@ -267,6 +284,7 @@ export function DashboardClient({ companyId }: { companyId: string }) {
 					selectedProductId={selectedProductId}
 					onProductChange={setSelectedProductId}
 					loading={loading}
+					configuredProductIds={configuredProductIds}
 				/>
 
 				{selectedProductId && (
