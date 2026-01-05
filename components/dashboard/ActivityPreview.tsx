@@ -45,7 +45,7 @@ export function ActivityPreview({ activities, loading = false }: ActivityPreview
 	}
 
 	return (
-		<div className="bg-surface rounded-lg p-6 shadow-subtle">
+		<div className="bg-surface rounded-lg p-6 shadow-subtle pointer-events-auto">
 			<h2 className="text-xl font-semibold text-text-primary mb-4">
 				Recent Upgrade Actions
 			</h2>
@@ -58,7 +58,7 @@ export function ActivityPreview({ activities, loading = false }: ActivityPreview
 					{activities.slice(0, 5).map((activity) => (
 						<div
 							key={activity.id}
-							className="flex items-center justify-between p-4 bg-background rounded-lg border border-border"
+							className="flex items-center justify-between p-4 bg-background rounded-lg border border-border pointer-events-auto"
 						>
 							<div className="flex-1">
 								<div className="text-sm font-medium text-text-primary">

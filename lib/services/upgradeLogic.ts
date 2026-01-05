@@ -79,6 +79,7 @@ export async function processUpgrade(
 		const { data: config } = await supabaseAdmin
 			.from("product_configs")
 			.select("*")
+			.eq("company_id", companyId)
 			.eq("product_id", productId)
 			.single();
 

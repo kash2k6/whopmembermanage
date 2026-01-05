@@ -12,6 +12,7 @@ export interface UpgradeRule {
 
 export interface ProductConfig {
 	id: string;
+	company_id: string;
 	product_id: string;
 	cancellation_timing: "immediate" | "period_end";
 	enabled: boolean;

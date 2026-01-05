@@ -49,6 +49,7 @@ export function DashboardClient({ companyId }: { companyId: string }) {
 	const [loading, setLoading] = useState(true);
 	const [saving, setSaving] = useState(false);
 	const [hasChanges, setHasChanges] = useState(false);
+	const [saveSuccess, setSaveSuccess] = useState(false);
 	const [initialState, setInitialState] = useState<{
 		enabled: boolean;
 		advancedRules: AdvancedRules;
@@ -115,28 +116,49 @@ export function DashboardClient({ companyId }: { companyId: string }) {
 
 	const fetchRules = async (productId: string) => {
 		try {
+			console.log("Fetching rules for product:", productId);
 			const response = await fetch(
 				`/api/rules?companyId=${companyId}&productId=${productId}`,
 			);
 			if (!response.ok) throw new Error("Failed to fetch rules");
 			const data = await response.json();
-			setEnabled(data.enabled ?? true);
-			setAdvancedRules(data.advancedRules || {
+			console.log("Loaded configuration response:", data);
+			
+			// Check if there's an error in the response
+			if (data.error) {
+				console.error("API returned error:", data.error);
+				throw new Error(data.error);
+			}
+			
+			const loadedEnabled = data.enabled ?? true;
+			const loadedAdvancedRules = data.advancedRules || {
 				ignoreFreePlans: false,
 				treatSamePriceAsUpgrade: false,
 				allowDowngradeToCancel: true, // Default ON
+			};
+			
+			console.log("Setting state with:", {
+				enabled: loadedEnabled,
+				advancedRules: loadedAdvancedRules,
 			});
+			
+			setEnabled(loadedEnabled);
+			setAdvancedRules(loadedAdvancedRules);
 			setInitialState({
-				enabled: data.enabled ?? true,
-				advancedRules: data.advancedRules || {
-					ignoreFreePlans: false,
-					treatSamePriceAsUpgrade: false,
-					allowDowngradeToCancel: true, // Default ON
-				},
+				enabled: loadedEnabled,
+				advancedRules: loadedAdvancedRules,
 			});
 			setHasChanges(false);
+			console.log("Configuration loaded and state updated successfully");
 		} catch (error) {
 			console.error("Error fetching rules:", error);
+			// Set defaults on error
+			setEnabled(true);
+			setAdvancedRules({
+				ignoreFreePlans: false,
+				treatSamePriceAsUpgrade: false,
+				allowDowngradeToCancel: true,
+			});
 		}
 	};
 
@@ -166,10 +188,22 @@ export function DashboardClient({ companyId }: { companyId: string }) {
 	);
 
 	const handleSave = async () => {
-		if (!selectedProductId) return;
+		console.log("Save clicked", { selectedProductId, enabled, advancedRules });
+		
+		if (!selectedProductId) {
+			alert("Please select a product first");
+			return;
+		}
 
 		try {
 			setSaving(true);
+			console.log("Saving configuration...", {
+				companyId,
+				productId: selectedProductId,
+				enabled,
+				advancedRules,
+			});
+
 			const response = await fetch(`/api/rules`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
@@ -181,14 +215,24 @@ export function DashboardClient({ companyId }: { companyId: string }) {
 				}),
 			});
 
-			if (!response.ok) throw new Error("Failed to save configuration");
+			const responseData = await response.json();
+			console.log("Save response:", { status: response.status, data: responseData });
+
+			if (!response.ok) {
+				throw new Error(responseData.error || "Failed to save configuration");
+			}
 
 			// Update initial state to reflect saved state
 			setInitialState({ enabled, advancedRules });
 			setHasChanges(false);
+			setSaveSuccess(true);
+			console.log("Configuration saved successfully");
+			
+			// Hide success message after 3 seconds
+			setTimeout(() => setSaveSuccess(false), 3000);
 		} catch (error) {
 			console.error("Error saving configuration:", error);
-			alert("Failed to save configuration. Please try again.");
+			alert(`Failed to save configuration: ${error instanceof Error ? error.message : "Unknown error"}`);
 		} finally {
 			setSaving(false);
 		}
@@ -203,8 +247,8 @@ export function DashboardClient({ companyId }: { companyId: string }) {
 	const hasRules = enabled;
 
 	return (
-		<div className="min-h-screen bg-background pb-24">
-			<div className="max-w-7xl mx-auto px-6 py-8 space-y-8">
+		<div className="min-h-screen bg-background pb-24 relative">
+			<div className="max-w-7xl mx-auto px-6 py-8 space-y-8 relative z-0">
 				<HeroSection hasRules={hasRules} />
 
 				<ProductSelector
@@ -231,6 +275,7 @@ export function DashboardClient({ companyId }: { companyId: string }) {
 				onReset={handleReset}
 				saving={saving}
 				hasChanges={hasChanges}
+				saveSuccess={saveSuccess}
 			/>
 		</div>
 	);

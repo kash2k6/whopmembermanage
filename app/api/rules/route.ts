@@ -21,24 +21,54 @@ export async function GET(request: NextRequest) {
 			);
 		}
 
-		// Fetch product config (new simplified structure)
+		// Fetch product config (new simplified structure) - scoped to company
 		const { data: config, error: configError } = await supabaseAdmin
 			.from("product_configs")
 			.select("*")
+			.eq("company_id", companyId)
 			.eq("product_id", productId)
 			.single();
 
+		console.log("Fetching config for product:", productId);
+		console.log("Config data:", config);
+		console.log("Config error:", configError);
+
+		// PGRST116 is "not found" - that's okay, we'll use defaults
 		if (configError && configError.code !== "PGRST116") {
 			console.error("Error fetching product config:", configError);
+			return NextResponse.json(
+				{ error: "Failed to fetch configuration", details: configError.message },
+				{ status: 500 },
+			);
 		}
 
-		// Return simplified structure
+		// If no config exists, return defaults
+		if (!config) {
+			console.log("No config found, returning defaults");
+			return NextResponse.json({
+				enabled: true, // Default to enabled
+				advancedRules: {
+					ignoreFreePlans: false,
+					treatSamePriceAsUpgrade: false,
+					allowDowngradeToCancel: true, // Default ON - prevents double-charging
+				},
+			});
+		}
+
+		// Return saved configuration
+		console.log("Returning saved config:", {
+			enabled: config.enabled,
+			ignoreFreePlans: config.ignore_free_plans,
+			treatSamePriceAsUpgrade: config.treat_same_price_as_upgrade,
+			allowDowngradeToCancel: config.allow_downgrade_to_cancel,
+		});
+
 		return NextResponse.json({
-			enabled: config?.enabled ?? true, // Default to enabled
+			enabled: config.enabled ?? true,
 			advancedRules: {
-				ignoreFreePlans: config?.ignore_free_plans ?? false,
-				treatSamePriceAsUpgrade: config?.treat_same_price_as_upgrade ?? false,
-				allowDowngradeToCancel: config?.allow_downgrade_to_cancel ?? true, // Default ON - prevents double-charging
+				ignoreFreePlans: config.ignore_free_plans ?? false,
+				treatSamePriceAsUpgrade: config.treat_same_price_as_upgrade ?? false,
+				allowDowngradeToCancel: config.allow_downgrade_to_cancel ?? true,
 			},
 		});
 	} catch (error) {
@@ -69,14 +99,16 @@ export async function POST(request: NextRequest) {
 			);
 		}
 
-		// Check if config exists
+		// Check if config exists - scoped to company
 		const { data: existingConfig } = await supabaseAdmin
 			.from("product_configs")
 			.select("*")
+			.eq("company_id", companyId)
 			.eq("product_id", productId)
 			.single();
 
 		const configData = {
+			company_id: companyId,
 			product_id: productId,
 			cancellation_timing: "period_end",
 			enabled: enabled ?? true,
@@ -85,7 +117,7 @@ export async function POST(request: NextRequest) {
 			allow_downgrade_to_cancel: advancedRules?.allowDowngradeToCancel ?? true, // Default ON
 		};
 
-		if (!existingConfig) {
+		if (!existingConfig || existingConfig.code === "PGRST116") {
 			// Insert new config
 			const { error: insertError } = await supabaseAdmin
 				.from("product_configs")
@@ -99,10 +131,11 @@ export async function POST(request: NextRequest) {
 				);
 			}
 		} else {
-			// Update existing config
+			// Update existing config - scoped to company
 			const { error: updateError } = await supabaseAdmin
 				.from("product_configs")
 				.update(configData)
+				.eq("company_id", companyId)
 				.eq("product_id", productId);
 
 			if (updateError) {
