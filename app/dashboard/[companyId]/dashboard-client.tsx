@@ -6,6 +6,7 @@ import { ProductSelector } from "@/components/dashboard/ProductSelector";
 import { UpgradeBehavior } from "@/components/dashboard/UpgradeBehavior";
 import { StickyFooter } from "@/components/dashboard/StickyFooter";
 import { ActivityPreview } from "@/components/dashboard/ActivityPreview";
+import { AccessWarningBanner } from "@/components/dashboard/AccessWarningBanner";
 
 interface Product {
 	id: string;
@@ -35,7 +36,13 @@ interface ActivityLog {
 	created_at: string;
 }
 
-export function DashboardClient({ companyId }: { companyId: string }) {
+export function DashboardClient({
+	companyId,
+	hasAppAccess = false,
+}: {
+	companyId: string;
+	hasAppAccess?: boolean;
+}) {
 	const [products, setProducts] = useState<Product[]>([]);
 	const [configuredProductIds, setConfiguredProductIds] = useState<Set<string>>(new Set());
 	const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
@@ -215,6 +222,12 @@ export function DashboardClient({ companyId }: { companyId: string }) {
 	const handleSave = async () => {
 		console.log("Save clicked", { selectedProductId, enabled, advancedRules });
 		
+		// Check access before allowing save
+		if (!hasAppAccess) {
+			alert("Premium subscription required. Please subscribe to use this feature.");
+			return;
+		}
+		
 		if (!selectedProductId) {
 			alert("Please select a product first");
 			return;
@@ -272,12 +285,38 @@ export function DashboardClient({ companyId }: { companyId: string }) {
 		setHasChanges(false);
 	};
 
+	// Re-check access after purchase
+	const recheckAccess = useCallback(async () => {
+		try {
+			const response = await fetch("/api/access/check");
+			if (response.ok) {
+				const data = await response.json();
+				if (data.hasAccess) {
+					// Refresh the page to reload with access
+					window.location.reload();
+				}
+			}
+		} catch (error) {
+			console.error("Error rechecking access:", error);
+		}
+	}, []);
+
 	const hasRules = enabled;
+
+	// Debug log
+	console.log("DashboardClient render - hasAppAccess:", hasAppAccess);
+	console.log("Will show banner:", !hasAppAccess);
 
 	return (
 		<div className="min-h-screen bg-background pb-24 relative">
 			<div className="max-w-7xl mx-auto px-6 py-8 space-y-8 relative z-0">
 				<HeroSection hasRules={hasRules} />
+
+				{!hasAppAccess && (
+					<div>
+						<AccessWarningBanner onPurchaseSuccess={recheckAccess} />
+					</div>
+				)}
 
 				<ProductSelector
 					products={products}

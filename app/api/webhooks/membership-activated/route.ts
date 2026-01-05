@@ -2,6 +2,7 @@ import { waitUntil } from "@vercel/functions";
 import { NextRequest, NextResponse } from "next/server";
 import { whopSdk } from "@/lib/whop-sdk";
 import { processUpgrade } from "@/lib/services/upgradeLogic";
+import { checkUserProductAccess } from "@/lib/services/accessCheck";
 
 export async function POST(request: NextRequest): Promise<Response> {
 	try {
@@ -86,6 +87,14 @@ export async function POST(request: NextRequest): Promise<Response> {
 					},
 					{ status: 400 },
 				);
+			}
+
+			// Check if user has access to the app's premium product before processing
+			const accessCheck = await checkUserProductAccess(user.id);
+			if (!accessCheck.hasAccess) {
+				console.log("User does not have access to app product, skipping upgrade processing");
+				console.log("=== WEBHOOK PROCESSED (ACCESS DENIED) ===");
+				return new Response("OK", { status: 200 });
 			}
 
 			// Process upgrade asynchronously

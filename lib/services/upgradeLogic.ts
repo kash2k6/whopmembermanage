@@ -6,6 +6,7 @@ import {
 	type WhopPlan,
 } from "@/lib/whop/client";
 import { supabaseAdmin } from "@/lib/db/client";
+import { checkUserProductAccess } from "@/lib/services/accessCheck";
 
 interface ProcessUpgradeParams {
 	companyId: string;
@@ -31,6 +32,17 @@ export async function processUpgrade(
 
 	console.log("=== STARTING UPGRADE PROCESSING ===");
 	console.log("Params:", { companyId, membershipId, userId, productId, planId });
+
+	// Check if user has access to the app's premium product
+	const accessCheck = await checkUserProductAccess(userId);
+	if (!accessCheck.hasAccess) {
+		console.log("User does not have access to app product, skipping upgrade processing");
+		return {
+			success: false,
+			canceledMemberships: [],
+			error: "User does not have access to the app's premium product",
+		};
+	}
 
 	try {
 		// Fetch the new plan details
