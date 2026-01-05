@@ -284,7 +284,7 @@ export async function processUpgrade(
 			console.warn(`⚠️  Some memberships failed to cancel`);
 		}
 
-		const result = {
+		const result: UpgradeResult = {
 			success: canceledIds.length > 0 || membershipsToCancel.length === 0,
 			canceledMemberships: canceledIds,
 		};
