@@ -1,0 +1,237 @@
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+import { HeroSection } from "@/components/dashboard/HeroSection";
+import { ProductSelector } from "@/components/dashboard/ProductSelector";
+import { UpgradeBehavior } from "@/components/dashboard/UpgradeBehavior";
+import { StickyFooter } from "@/components/dashboard/StickyFooter";
+import { ActivityPreview } from "@/components/dashboard/ActivityPreview";
+
+interface Product {
+	id: string;
+	title: string;
+	planCount: number;
+}
+
+interface Plan {
+	id: string;
+	title: string;
+	renewal_price: number;
+	initial_price: number;
+}
+
+interface AdvancedRules {
+	ignoreFreePlans: boolean;
+	treatSamePriceAsUpgrade: boolean;
+	allowDowngradeToCancel: boolean;
+}
+
+interface ActivityLog {
+	id: string;
+	user_id: string;
+	old_plan_name: string | null;
+	new_plan_name: string;
+	status: string;
+	created_at: string;
+}
+
+export function DashboardClient({ companyId }: { companyId: string }) {
+	const [products, setProducts] = useState<Product[]>([]);
+	const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
+	const [plans, setPlans] = useState<Plan[]>([]);
+	const [enabled, setEnabled] = useState(true);
+	const [advancedRules, setAdvancedRules] = useState<AdvancedRules>({
+		ignoreFreePlans: false,
+		treatSamePriceAsUpgrade: false,
+		allowDowngradeToCancel: true, // Default ON - prevents double-charging on downgrades
+	});
+	const [activities, setActivities] = useState<ActivityLog[]>([]);
+	const [loading, setLoading] = useState(true);
+	const [saving, setSaving] = useState(false);
+	const [hasChanges, setHasChanges] = useState(false);
+	const [initialState, setInitialState] = useState<{
+		enabled: boolean;
+		advancedRules: AdvancedRules;
+	}>({
+		enabled: true,
+		advancedRules: {
+			ignoreFreePlans: false,
+			treatSamePriceAsUpgrade: false,
+			allowDowngradeToCancel: true, // Default ON
+		},
+	});
+
+	// Fetch products on mount
+	useEffect(() => {
+		fetchProducts();
+		fetchActivities();
+	}, [companyId]);
+
+	// Fetch plans and rules when product is selected
+	useEffect(() => {
+		if (selectedProductId) {
+			fetchPlans(selectedProductId);
+			fetchRules(selectedProductId);
+		} else {
+			setPlans([]);
+			setEnabled(true);
+			setAdvancedRules({
+				ignoreFreePlans: false,
+				treatSamePriceAsUpgrade: false,
+				allowDowngradeToCancel: true, // Default ON
+			});
+		}
+	}, [selectedProductId, companyId]);
+
+	const fetchProducts = async () => {
+		try {
+			setLoading(true);
+			const response = await fetch(`/api/products?companyId=${companyId}`);
+			if (!response.ok) throw new Error("Failed to fetch products");
+			const data = await response.json();
+			setProducts(data.products || []);
+		} catch (error) {
+			console.error("Error fetching products:", error);
+		} finally {
+			setLoading(false);
+		}
+	};
+
+	const fetchPlans = async (productId: string) => {
+		try {
+			setLoading(true);
+			const response = await fetch(
+				`/api/plans?companyId=${companyId}&productId=${productId}`,
+			);
+			if (!response.ok) throw new Error("Failed to fetch plans");
+			const data = await response.json();
+			setPlans(data.plans || []);
+		} catch (error) {
+			console.error("Error fetching plans:", error);
+		} finally {
+			setLoading(false);
+		}
+	};
+
+	const fetchRules = async (productId: string) => {
+		try {
+			const response = await fetch(
+				`/api/rules?companyId=${companyId}&productId=${productId}`,
+			);
+			if (!response.ok) throw new Error("Failed to fetch rules");
+			const data = await response.json();
+			setEnabled(data.enabled ?? true);
+			setAdvancedRules(data.advancedRules || {
+				ignoreFreePlans: false,
+				treatSamePriceAsUpgrade: false,
+				allowDowngradeToCancel: true, // Default ON
+			});
+			setInitialState({
+				enabled: data.enabled ?? true,
+				advancedRules: data.advancedRules || {
+					ignoreFreePlans: false,
+					treatSamePriceAsUpgrade: false,
+					allowDowngradeToCancel: true, // Default ON
+				},
+			});
+			setHasChanges(false);
+		} catch (error) {
+			console.error("Error fetching rules:", error);
+		}
+	};
+
+	const fetchActivities = async () => {
+		try {
+			const response = await fetch(`/api/activity?companyId=${companyId}`);
+			if (!response.ok) throw new Error("Failed to fetch activities");
+			const data = await response.json();
+			setActivities(data.activities || []);
+		} catch (error) {
+			console.error("Error fetching activities:", error);
+		}
+	};
+
+	const handleUpgradeBehaviorChange = useCallback(
+		(newEnabled: boolean, newAdvancedRules: AdvancedRules) => {
+			setEnabled(newEnabled);
+			setAdvancedRules(newAdvancedRules);
+
+			// Check if state has changed
+			const enabledChanged = newEnabled !== initialState.enabled;
+			const advancedChanged =
+				JSON.stringify(newAdvancedRules) !== JSON.stringify(initialState.advancedRules);
+			setHasChanges(enabledChanged || advancedChanged);
+		},
+		[initialState],
+	);
+
+	const handleSave = async () => {
+		if (!selectedProductId) return;
+
+		try {
+			setSaving(true);
+			const response = await fetch(`/api/rules`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					companyId,
+					productId: selectedProductId,
+					enabled,
+					advancedRules,
+				}),
+			});
+
+			if (!response.ok) throw new Error("Failed to save configuration");
+
+			// Update initial state to reflect saved state
+			setInitialState({ enabled, advancedRules });
+			setHasChanges(false);
+		} catch (error) {
+			console.error("Error saving configuration:", error);
+			alert("Failed to save configuration. Please try again.");
+		} finally {
+			setSaving(false);
+		}
+	};
+
+	const handleReset = () => {
+		setEnabled(initialState.enabled);
+		setAdvancedRules(initialState.advancedRules);
+		setHasChanges(false);
+	};
+
+	const hasRules = enabled;
+
+	return (
+		<div className="min-h-screen bg-background pb-24">
+			<div className="max-w-7xl mx-auto px-6 py-8 space-y-8">
+				<HeroSection hasRules={hasRules} />
+
+				<ProductSelector
+					products={products}
+					selectedProductId={selectedProductId}
+					onProductChange={setSelectedProductId}
+					loading={loading}
+				/>
+
+				{selectedProductId && (
+					<UpgradeBehavior
+						plans={plans}
+						enabled={enabled}
+						advancedRules={advancedRules}
+						onChange={handleUpgradeBehaviorChange}
+					/>
+				)}
+
+				<ActivityPreview activities={activities} loading={loading} />
+			</div>
+
+			<StickyFooter
+				onSave={handleSave}
+				onReset={handleReset}
+				saving={saving}
+				hasChanges={hasChanges}
+			/>
+		</div>
+	);
+}

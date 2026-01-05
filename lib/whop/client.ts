@@ -1,0 +1,312 @@
+const API_BASE_URL = "https://api.whop.com/api/v1";
+
+function getApiKey(): string {
+	const apiKey = process.env.WHOP_API_KEY;
+	if (!apiKey) {
+		throw new Error("WHOP_API_KEY is not set");
+	}
+	return apiKey;
+}
+
+export interface WhopProduct {
+	id: string;
+	title: string;
+	company_id: string;
+}
+
+export interface WhopPlan {
+	id: string;
+	title: string;
+	product_id: string;
+	initial_price: number;
+	renewal_price: number;
+	plan_type: "renewal" | "one-time";
+}
+
+export interface WhopMembership {
+	id: string;
+	user_id: string;
+	product_id: string;
+	plan_id: string;
+	status: string;
+}
+
+/**
+ * Fetch all products for a company using v1 REST API
+ */
+export async function fetchProducts(companyId: string): Promise<WhopProduct[]> {
+	const products: WhopProduct[] = [];
+	let after: string | null = null;
+	
+	try {
+		// Check API key first
+		const apiKey = getApiKey();
+		if (!apiKey || apiKey === "fallback") {
+			throw new Error("WHOP_API_KEY is not properly configured. Please set it in your environment variables.");
+		}
+		
+		do {
+			const url = new URL(`${API_BASE_URL}/products`);
+			url.searchParams.set("company_id", companyId);
+			if (after) {
+				url.searchParams.set("after", after);
+			}
+			
+			const response = await fetch(url.toString(), {
+				headers: {
+					Authorization: `Bearer ${apiKey}`,
+					"Content-Type": "application/json",
+				},
+			});
+			
+			if (!response.ok) {
+				const errorText = await response.text();
+				let errorMessage = `Failed to fetch products: ${response.status}`;
+				try {
+					const errorJson = JSON.parse(errorText);
+					errorMessage += ` - ${errorJson.message || errorJson.error || errorText}`;
+				} catch {
+					errorMessage += ` - ${errorText}`;
+				}
+				throw new Error(errorMessage);
+			}
+			
+			const data = await response.json();
+			// Handle different response formats
+			const items = data.data || data.products || (Array.isArray(data) ? data : []);
+			products.push(...items);
+			
+			// Check for pagination
+			const pageInfo = data.page_info || data.pagination;
+			after = pageInfo?.end_cursor || pageInfo?.next_cursor || null;
+			
+			// Break if no more pages
+			if (!pageInfo?.has_next_page && !after) {
+				break;
+			}
+		} while (after);
+	} catch (error) {
+		console.error("Error fetching products:", error);
+		throw error;
+	}
+	
+	return products;
+}
+
+/**
+ * Fetch all plans for a product using v1 REST API
+ */
+export async function fetchPlans(
+	companyId: string,
+	productId: string,
+): Promise<WhopPlan[]> {
+	const plans: WhopPlan[] = [];
+	let after: string | null = null;
+	
+	try {
+		do {
+			const url = new URL(`${API_BASE_URL}/plans`);
+			url.searchParams.set("company_id", companyId);
+			url.searchParams.append("product_ids[]", productId);
+			if (after) {
+				url.searchParams.set("after", after);
+			}
+			
+			const response = await fetch(url.toString(), {
+				headers: {
+					Authorization: `Bearer ${getApiKey()}`,
+					"Content-Type": "application/json",
+				},
+			});
+			
+			if (!response.ok) {
+				const errorText = await response.text();
+				throw new Error(`Failed to fetch plans: ${response.status} ${errorText}`);
+			}
+			
+			const data = await response.json();
+			const items = data.data || (Array.isArray(data) ? data : []);
+			
+			// Map API response to our interface
+			const mappedPlans: WhopPlan[] = items.map((plan: any) => {
+				// Plans in Whop API have:
+				// - title: null (plans don't have titles)
+				// - product.title: "Ai Voice Agent Support" (product name)
+				// - internal_notes: "Scale", "Growth", "Starter" (plan tier/name)
+				// - renewal_price: 149.95 (in dollars, not cents!)
+				// - product.id: product ID
+				
+				// Use internal_notes as plan name if available (e.g., "Scale", "Growth", "Starter")
+				let title = plan.internal_notes || 
+					plan.title || 
+					plan.name || 
+					plan.description ||
+					null;
+				
+				// Get prices - Whop API returns prices in DOLLARS (not cents!)
+				// Example: renewal_price: 149.95 means $149.95
+				let initialPrice = plan.initial_price ?? plan.initialPrice ?? 0;
+				let renewalPrice = plan.renewal_price ?? plan.renewalPrice ?? 0;
+				
+				// Convert to cents (multiply by 100)
+				initialPrice = Math.round(Number(initialPrice) * 100) || 0;
+				renewalPrice = Math.round(Number(renewalPrice) * 100) || 0;
+				
+				// Get product ID from nested product object
+				const productId = plan.product?.id || plan.product_id || plan.access_pass_id || "";
+				
+				// If no title from internal_notes, create one from price
+				// This will be enhanced later with product name in the API route
+				if (!title) {
+					const displayPrice = renewalPrice || initialPrice;
+					const priceFormatted = displayPrice > 0 ? `$${(displayPrice / 100).toFixed(2)}` : "Free";
+					title = `${priceFormatted}/mo`;
+				}
+				
+				return {
+					id: plan.id || "",
+					title: title,
+					product_id: productId,
+					initial_price: initialPrice,
+					renewal_price: renewalPrice,
+					plan_type: (plan.plan_type || plan.type || plan.planType || "renewal") as "renewal" | "one-time",
+				};
+			});
+			
+			plans.push(...mappedPlans);
+			
+			// Check for pagination
+			const pageInfo = data.page_info || data.pagination;
+			after = pageInfo?.end_cursor || pageInfo?.next_cursor || null;
+			
+			// Break if no more pages
+			if (!pageInfo?.has_next_page && !after) {
+				break;
+			}
+		} while (after);
+	} catch (error) {
+		console.error("Error fetching plans:", error);
+		throw error;
+	}
+	
+	return plans;
+}
+
+/**
+ * Fetch a single plan by ID using v1 REST API
+ */
+export async function fetchPlan(
+	companyId: string,
+	planId: string,
+): Promise<WhopPlan | null> {
+	try {
+		const url = `${API_BASE_URL}/plans/${planId}`;
+		
+		const response = await fetch(url, {
+			headers: {
+				Authorization: `Bearer ${getApiKey()}`,
+				"Content-Type": "application/json",
+			},
+		});
+		
+		if (!response.ok) {
+			console.error(`Failed to fetch plan: ${response.status}`);
+			return null;
+		}
+		
+		const plan = await response.json();
+		return {
+			id: plan.id,
+			title: plan.title || "",
+			product_id: plan.product_id || "",
+			initial_price: plan.initial_price || 0,
+			renewal_price: plan.renewal_price || 0,
+			plan_type: (plan.plan_type as "renewal" | "one-time") || "renewal",
+		};
+	} catch (error) {
+		console.error("Error fetching plan:", error);
+		return null;
+	}
+}
+
+/**
+ * Fetch active memberships for a user and product using v1 REST API
+ */
+export async function fetchActiveMemberships(
+	companyId: string,
+	userId: string,
+	productId: string,
+): Promise<WhopMembership[]> {
+	const memberships: WhopMembership[] = [];
+	let after: string | null = null;
+	
+	try {
+		do {
+			const url = new URL(`${API_BASE_URL}/memberships`);
+			url.searchParams.set("company_id", companyId);
+			url.searchParams.append("user_ids[]", userId);
+			url.searchParams.append("product_ids[]", productId);
+			url.searchParams.append("statuses[]", "active");
+			if (after) {
+				url.searchParams.set("after", after);
+			}
+			
+			const response = await fetch(url.toString(), {
+				headers: {
+					Authorization: `Bearer ${getApiKey()}`,
+					"Content-Type": "application/json",
+				},
+			});
+			
+			if (!response.ok) {
+				const errorText = await response.text();
+				throw new Error(`Failed to fetch memberships: ${response.status} ${errorText}`);
+			}
+			
+			const data = await response.json();
+			memberships.push(...(data.data || []));
+			
+			after = data.page_info?.end_cursor || null;
+		} while (after);
+	} catch (error) {
+		console.error("Error fetching memberships:", error);
+		throw error;
+	}
+	
+	return memberships;
+}
+
+/**
+ * Cancel a membership using v1 REST API
+ */
+export async function cancelMembership(
+	companyId: string,
+	membershipId: string,
+	immediate = false,
+): Promise<boolean> {
+	try {
+		const url = new URL(`${API_BASE_URL}/memberships/${membershipId}/cancel`);
+		if (immediate) {
+			url.searchParams.set("immediate", "true");
+		}
+		
+		const response = await fetch(url.toString(), {
+			method: "POST",
+			headers: {
+				Authorization: `Bearer ${getApiKey()}`,
+				"Content-Type": "application/json",
+			},
+		});
+		
+		if (!response.ok) {
+			const errorText = await response.text();
+			console.error(`Failed to cancel membership: ${response.status} ${errorText}`);
+			return false;
+		}
+		
+		return true;
+	} catch (error) {
+		console.error("Error canceling membership:", error);
+		return false;
+	}
+}
