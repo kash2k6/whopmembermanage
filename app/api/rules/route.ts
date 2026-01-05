@@ -6,6 +6,8 @@ export async function GET(request: NextRequest) {
 		const searchParams = request.nextUrl.searchParams;
 		const companyId = searchParams.get("companyId");
 		const productId = searchParams.get("productId");
+		
+		console.log("GET /api/rules called with:", { companyId, productId });
 
 		if (!companyId || !productId) {
 			return NextResponse.json(

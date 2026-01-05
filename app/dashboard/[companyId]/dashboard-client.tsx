@@ -70,10 +70,13 @@ export function DashboardClient({ companyId }: { companyId: string }) {
 
 	// Fetch plans and rules when product is selected
 	useEffect(() => {
+		console.log("Product selection changed:", selectedProductId);
 		if (selectedProductId) {
+			console.log("Fetching plans and rules for product:", selectedProductId);
 			fetchPlans(selectedProductId);
 			fetchRules(selectedProductId);
 		} else {
+			console.log("No product selected, resetting to defaults");
 			setPlans([]);
 			setEnabled(true);
 			setAdvancedRules({
@@ -90,7 +93,15 @@ export function DashboardClient({ companyId }: { companyId: string }) {
 			const response = await fetch(`/api/products?companyId=${companyId}`);
 			if (!response.ok) throw new Error("Failed to fetch products");
 			const data = await response.json();
-			setProducts(data.products || []);
+			const productsList = data.products || [];
+			console.log("Fetched products:", productsList);
+			setProducts(productsList);
+			
+			// Auto-select first product if none selected and products exist
+			if (!selectedProductId && productsList.length > 0) {
+				console.log("Auto-selecting first product:", productsList[0].id);
+				setSelectedProductId(productsList[0].id);
+			}
 		} catch (error) {
 			console.error("Error fetching products:", error);
 		} finally {
