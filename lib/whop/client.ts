@@ -244,12 +244,17 @@ export async function fetchActiveMemberships(
 		do {
 			const url = new URL(`${API_BASE_URL}/memberships`);
 			url.searchParams.set("company_id", companyId);
-			url.searchParams.append("user_ids[]", userId);
-			url.searchParams.append("product_ids[]", productId);
+			url.searchParams.set("user_id", userId); // Use singular user_id, not array
+			url.searchParams.set("product_id", productId); // Use singular product_id, not array
+			// Include both active and trialing memberships
+			// Trialing memberships are still active and should be considered
 			url.searchParams.append("statuses[]", "active");
+			url.searchParams.append("statuses[]", "trialing");
 			if (after) {
 				url.searchParams.set("after", after);
 			}
+			
+			console.log("Fetching memberships from:", url.toString());
 			
 			const response = await fetch(url.toString(), {
 				headers: {
@@ -264,7 +269,9 @@ export async function fetchActiveMemberships(
 			}
 			
 			const data = await response.json();
-			memberships.push(...(data.data || []));
+			const items = data.data || data.memberships || (Array.isArray(data) ? data : []);
+			console.log(`Fetched ${items.length} membership(s) from API (page)`);
+			memberships.push(...items);
 			
 			after = data.page_info?.end_cursor || null;
 		} while (after);

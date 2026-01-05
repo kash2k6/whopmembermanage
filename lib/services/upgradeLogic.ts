@@ -62,13 +62,14 @@ export async function processUpgrade(
 		}
 
 		// Fetch active memberships for the same user and product
+		// Note: We include "trialing" status as these are active memberships that should be considered
 		console.log(`Fetching active memberships for user ${userId} and product ${productId}`);
 		const activeMemberships = await fetchActiveMemberships(
 			companyId,
 			userId,
 			productId,
 		);
-		console.log(`Found ${activeMemberships.length} active membership(s):`, activeMemberships.map(m => ({ id: m.id, planId: m.plan_id, status: m.status })));
+		console.log(`Found ${activeMemberships.length} active/trialing membership(s):`, activeMemberships.map(m => ({ id: m.id, planId: m.plan_id, status: m.status })));
 
 		// Filter out the new membership itself
 		const existingMemberships = activeMemberships.filter(
@@ -209,17 +210,20 @@ export async function processUpgrade(
 		
 		if (membershipsToCancel.length === 0) {
 			console.log("No memberships to cancel based on upgrade rules");
-			await logActivity({
-				companyId,
-				userId,
-				productId,
-				oldPlanId: existingMemberships[0]?.plan_id || null,
-				newPlanId: planId,
-				oldPlanName: null,
-				newPlanName: newPlan.title,
-				status: "skipped",
-				errorMessage: "No memberships matched cancellation criteria",
-			});
+			if (existingMemberships.length > 0) {
+				// Log why we didn't cancel (e.g., downgrade, same price, etc.)
+				await logActivity({
+					companyId,
+					userId,
+					productId,
+					oldPlanId: existingMemberships[0]?.plan_id || null,
+					newPlanId: planId,
+					oldPlanName: null,
+					newPlanName: newPlan.title,
+					status: "skipped",
+					errorMessage: "No memberships matched cancellation criteria",
+				});
+			}
 		} else {
 			console.log(`Canceling ${membershipsToCancel.length} membership(s)`);
 		}
@@ -244,7 +248,7 @@ export async function processUpgrade(
 			);
 			if (success) {
 				canceledIds.push(membershipIdToCancel);
-				console.log(`Successfully canceled membership ${membershipIdToCancel}`);
+				console.log(`✅ Successfully canceled membership ${membershipIdToCancel} (plan: ${oldPlan?.title || membershipToCancel.plan_id})`);
 
 				// Log the activity
 				await logActivity({
@@ -258,7 +262,7 @@ export async function processUpgrade(
 					status: "canceled",
 				});
 			} else {
-				console.error(`Failed to cancel membership ${membershipIdToCancel}`);
+				console.error(`❌ Failed to cancel membership ${membershipIdToCancel}`);
 				await logActivity({
 					companyId,
 					userId,
@@ -272,11 +276,24 @@ export async function processUpgrade(
 				});
 			}
 		}
+		
+		console.log(`=== CANCELLATION SUMMARY ===`);
+		console.log(`Total to cancel: ${membershipsToCancel.length}`);
+		console.log(`Successfully canceled: ${canceledIds.length}`);
+		if (canceledIds.length < membershipsToCancel.length) {
+			console.warn(`⚠️  Some memberships failed to cancel`);
+		}
 
-		return {
-			success: true,
+		const result = {
+			success: canceledIds.length > 0 || membershipsToCancel.length === 0,
 			canceledMemberships: canceledIds,
 		};
+		
+		if (canceledIds.length === 0 && membershipsToCancel.length > 0) {
+			result.error = "Failed to cancel any memberships";
+		}
+		
+		return result;
 	} catch (error) {
 		console.error("Error processing upgrade:", error);
 		return {
