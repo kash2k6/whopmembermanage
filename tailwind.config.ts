@@ -23,12 +23,12 @@ const config: Config = {
 					800: "#B34A00",
 					900: "#993A00",
 				},
-				background: "#FAFAFA",
-				surface: "#FFFFFF",
-				border: "#EDEDED",
+				background: "var(--background)",
+				surface: "var(--surface)",
+				border: "var(--border)",
 				text: {
-					primary: "#1F2937",
-					muted: "#6B7280",
+					primary: "var(--text-primary)",
+					muted: "var(--text-muted)",
 				},
 			},
 			borderRadius: {
@@ -36,7 +36,7 @@ const config: Config = {
 				lg: "12px",
 			},
 			boxShadow: {
-				subtle: "0 8px 24px rgba(0,0,0,0.04)",
+				subtle: "var(--shadow-subtle, 0 8px 24px rgba(0,0,0,0.04))",
 			},
 			transitionDuration: {
 				DEFAULT: "150ms",
