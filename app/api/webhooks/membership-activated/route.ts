@@ -9,49 +9,116 @@ export async function POST(request: NextRequest): Promise<Response> {
 		const requestBodyText = await request.text();
 		const headers = Object.fromEntries(request.headers);
 
+		// Log raw request data
+		console.log("=== WEBHOOK RECEIVED ===");
+		console.log("Headers:", JSON.stringify(headers, null, 2));
+		console.log("Raw body length:", requestBodyText.length);
+		console.log("Raw body:", requestBodyText);
+
 		// Note: The newer @whop/api SDK may handle webhooks differently
 		// This is a placeholder - you may need to adjust based on actual SDK
 		let webhookData: any;
 		try {
 			// Try to verify and unwrap the webhook
 			webhookData = JSON.parse(requestBodyText);
+			console.log("Parsed webhook data:", JSON.stringify(webhookData, null, 2));
 		} catch (error) {
 			console.error("Error parsing webhook:", error);
 			return new Response("Invalid webhook payload", { status: 400 });
 		}
 
+		// Log webhook structure
+		console.log("Webhook type:", webhookData.type);
+		console.log("Webhook data keys:", webhookData.data ? Object.keys(webhookData.data) : "no data property");
+		console.log("Webhook top-level keys:", Object.keys(webhookData));
+
 		// Handle membership.activated event
 		if (webhookData.type === "membership.activated") {
-			const { membership, user, product, plan } = webhookData.data;
+			// The data object IS the membership object
+			const membershipData = webhookData.data;
+			const user = membershipData?.user;
+			const product = membershipData?.product;
+			const plan = membershipData?.plan;
+			const company = membershipData?.company;
 
-			if (!membership || !user || !product || !plan) {
-				return new Response("Missing required webhook data", { status: 400 });
+			console.log("Extracted data:");
+			console.log("- membership data:", membershipData ? `present (id: ${membershipData.id})` : "MISSING");
+			console.log("- user:", user ? `present (id: ${user.id})` : "MISSING");
+			console.log("- product:", product ? `present (id: ${product.id})` : "MISSING");
+			console.log("- plan:", plan ? `present (id: ${plan.id})` : "MISSING");
+			console.log("- company:", company ? `present (id: ${company.id})` : "MISSING");
+
+			if (!membershipData || !user || !product || !plan) {
+				console.error("Missing required webhook data - returning 400");
+				return NextResponse.json(
+					{
+						success: false,
+						status: 400,
+						body: "Missing required webhook data",
+						debug: {
+							hasMembershipData: !!membershipData,
+							hasUser: !!user,
+							hasProduct: !!product,
+							hasPlan: !!plan,
+							webhookType: webhookData.type,
+							dataKeys: webhookData.data ? Object.keys(webhookData.data) : null,
+							topLevelKeys: Object.keys(webhookData),
+						},
+					},
+					{ status: 400 },
+				);
 			}
 
-			// Extract company ID from the webhook context or membership
-			const companyId = webhookData.company_id || membership.company_id;
+			// Extract company ID from the membership data
+			const companyId = company?.id;
 
 			if (!companyId) {
 				console.error("Missing company_id in webhook");
-				return new Response("Missing company_id", { status: 400 });
+				return NextResponse.json(
+					{
+						success: false,
+						status: 400,
+						body: "Missing company_id",
+						debug: {
+							hasCompany: !!company,
+							companyData: company,
+						},
+					},
+					{ status: 400 },
+				);
 			}
 
 			// Process upgrade asynchronously
+			console.log("Processing upgrade for:", {
+				companyId,
+				membershipId: membershipData.id,
+				userId: user.id,
+				productId: product.id,
+				planId: plan.id,
+			});
+
 			waitUntil(
 				processUpgrade({
 					companyId,
-					membershipId: membership.id,
+					membershipId: membershipData.id,
 					userId: user.id,
 					productId: product.id,
 					planId: plan.id,
 				}),
 			);
+
+			console.log("Upgrade processing queued successfully");
+		} else {
+			console.log("Webhook type not handled:", webhookData.type);
 		}
 
 		// Return 200 quickly to acknowledge webhook receipt
+		console.log("=== WEBHOOK PROCESSED SUCCESSFULLY ===");
 		return new Response("OK", { status: 200 });
 	} catch (error) {
+		console.error("=== WEBHOOK ERROR ===");
 		console.error("Error processing webhook:", error);
+		console.error("Error stack:", error instanceof Error ? error.stack : "No stack trace");
 		// Still return 200 to prevent webhook retries for unexpected errors
 		// Log the error for investigation
 		return new Response("OK", { status: 200 });
