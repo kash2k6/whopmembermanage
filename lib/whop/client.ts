@@ -48,6 +48,9 @@ export async function fetchProducts(companyId: string): Promise<WhopProduct[]> {
 		do {
 			const url = new URL(`${API_BASE_URL}/products`);
 			url.searchParams.set("company_id", companyId);
+			// Filter to only include regular products - exclude app, experience_upsell, api_only
+			// Per Whop API docs: https://docs.whop.com/api-reference/products/list-products
+			url.searchParams.append("product_types[]", "regular");
 			if (after) {
 				url.searchParams.set("after", after);
 			}

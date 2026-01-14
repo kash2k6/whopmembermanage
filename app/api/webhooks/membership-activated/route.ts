@@ -34,6 +34,14 @@ export async function POST(request: NextRequest): Promise<Response> {
 		console.log("Webhook top-level keys:", Object.keys(webhookData));
 
 		// Handle membership.activated event
+		// VERIFIED: This is the correct webhook event for membership upgrades per Whop API documentation:
+		// https://docs.whop.com/api-reference/memberships/membership-activated
+		// The membership.activated event fires when a membership becomes active, which includes:
+		// - New memberships (first-time purchases)
+		// - Membership upgrades (purchasing a higher-tier plan)
+		// - Membership reactivations
+		// For upgrades, this event is triggered when the new membership becomes active,
+		// allowing us to detect and cancel the user's existing lower-tier membership.
 		if (webhookData.type === "membership.activated") {
 			// The data object IS the membership object
 			const membershipData = webhookData.data;
@@ -98,6 +106,16 @@ export async function POST(request: NextRequest): Promise<Response> {
 			}
 
 			// Process upgrade asynchronously
+			// VERIFIED: Invoking processUpgrade() with all required parameters:
+			// - companyId: From webhook membership data
+			// - membershipId: The newly activated membership ID
+			// - userId: User who purchased the new membership
+			// - productId: Product the membership belongs to
+			// - planId: Plan that was purchased
+			// The processUpgrade() function will:
+			// 1. Fetch the new plan details to get pricing
+			// 2. Fetch existing active memberships for the same user/product
+			// 3. Compare prices and cancel lower-tier memberships if upgrade detected
 			console.log("Processing upgrade for:", {
 				companyId,
 				membershipId: membershipData.id,

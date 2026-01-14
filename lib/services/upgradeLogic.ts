@@ -24,6 +24,20 @@ interface UpgradeResult {
 
 /**
  * Process membership upgrade: check for existing memberships and cancel lower-tier ones
+ * 
+ * VERIFIED UPGRADE LOGIC FLOW:
+ * 1. Verify user has access to app's premium product (required for upgrade processing)
+ * 2. Fetch new plan details to get pricing information
+ * 3. Only process renewal plans (skip one-time plans)
+ * 4. Fetch all active/trialing memberships for the same user and product
+ * 5. Filter out the newly activated membership (to avoid canceling itself)
+ * 6. Check product configuration (must be enabled for upgrade processing)
+ * 7. Compare prices between new plan and existing memberships:
+ *    - Upgrade (new > old): Always cancel old membership
+ *    - Same price: Cancel if treat_same_price_as_upgrade is enabled
+ *    - Downgrade (new < old): Cancel only if allow_downgrade_to_cancel is enabled
+ * 8. Cancel identified memberships using Whop API
+ * 9. Log all activities for audit trail
  */
 export async function processUpgrade(
 	params: ProcessUpgradeParams,
@@ -75,6 +89,11 @@ export async function processUpgrade(
 
 		// Fetch active memberships for the same user and product
 		// Note: We include "trialing" status as these are active memberships that should be considered
+		// VERIFIED: fetchActiveMemberships() correctly filters by:
+		// - company_id: Same company
+		// - user_id: Same user
+		// - product_id: Same product (critical - only cancel within same product)
+		// - statuses: "active" and "trialing" (both are active memberships)
 		console.log(`Fetching active memberships for user ${userId} and product ${productId}`);
 		const activeMemberships = await fetchActiveMemberships(
 			companyId,
@@ -84,6 +103,7 @@ export async function processUpgrade(
 		console.log(`Found ${activeMemberships.length} active/trialing membership(s):`, activeMemberships.map(m => ({ id: m.id, planId: m.plan_id, status: m.status })));
 
 		// Filter out the new membership itself
+		// VERIFIED: Critical - we must exclude the newly activated membership to avoid canceling it
 		const existingMemberships = activeMemberships.filter(
 			(m) => m.id !== membershipId,
 		);
@@ -193,6 +213,8 @@ export async function processUpgrade(
 			});
 
 			// Handle upgrades (new price > old price) - always cancel old plan
+			// VERIFIED: This is the core upgrade logic - when new plan price > existing plan price,
+			// we cancel the existing membership to prevent double billing
 			if (!isDowngrade && !isSamePrice) {
 				// This is an upgrade - cancel the old plan
 				console.log(`Upgrade detected: ${existingPlanPrice} -> ${newPlanPrice}, will cancel ${membership.id}`);
@@ -252,6 +274,8 @@ export async function processUpgrade(
 			// Fetch old plan details for logging
 			const oldPlan = await fetchPlan(companyId, membershipToCancel.plan_id);
 
+			// VERIFIED: cancelMembership() calls POST /memberships/{id}/cancel API endpoint
+			// This is the critical step that actually cancels the existing membership
 			console.log(`Attempting to cancel membership ${membershipIdToCancel} (plan: ${oldPlan?.title || membershipToCancel.plan_id})`);
 			const success = await cancelMembership(
 				companyId,
