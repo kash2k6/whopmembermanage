@@ -167,7 +167,9 @@ export async function processUpgrade(
 
 		// Compare plans and determine which to cancel
 		const membershipsToCancel: string[] = [];
-		const cancellationTiming = config.cancellation_timing === "immediate";
+		// Always cancel immediately when user upgrades to prevent double billing
+		// This ensures the old membership stops charging immediately upon upgrade
+		const cancellationTiming = true; // Always immediate for upgrades
 
 		// Get new plan price
 		const newPlanPrice = newPlan.renewal_price || newPlan.initial_price || 0;

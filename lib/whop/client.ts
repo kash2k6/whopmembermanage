@@ -361,6 +361,8 @@ export async function fetchActiveMemberships(
 
 /**
  * Cancel a membership using v1 REST API
+ * Per Whop API docs: https://docs.whop.com/api-reference/memberships/cancel-membership
+ * Uses POST /memberships/{id}/cancel with cancellation_mode in request body
  */
 export async function cancelMembership(
 	companyId: string,
@@ -368,17 +370,21 @@ export async function cancelMembership(
 	immediate = false,
 ): Promise<boolean> {
 	try {
-		const url = new URL(`${API_BASE_URL}/memberships/${membershipId}/cancel`);
-		if (immediate) {
-			url.searchParams.set("immediate", "true");
-		}
+		const url = `${API_BASE_URL}/memberships/${membershipId}/cancel`;
 		
-		const response = await fetch(url.toString(), {
+		// Per Whop API docs, cancellation_mode should be in request body, not query params
+		// Values: "immediate" or "at_period_end"
+		const body = {
+			cancellation_mode: immediate ? "immediate" : "at_period_end",
+		};
+		
+		const response = await fetch(url, {
 			method: "POST",
 			headers: {
 				Authorization: `Bearer ${getApiKey()}`,
 				"Content-Type": "application/json",
 			},
+			body: JSON.stringify(body),
 		});
 		
 		if (!response.ok) {
